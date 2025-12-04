@@ -21,16 +21,18 @@ def train_random_forest_model(df):
     missing_cols = [col for col in FEATURES + [LABEL] if col not in df.columns]
     if missing_cols:
         st.error(f"필수 열이 데이터에 없습니다: {', '.join(missing_cols)}")
-        return None, None, None
+        return None, None, None, None, None
 
     # 데이터 분리
     X = df[FEATURES]
     y = df[LABEL]
 
     # 학습 데이터와 테스트 데이터 분리 (예시: 80% 학습, 20% 테스트)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # y의 클래스 분포가 균형 잡혀 있지 않을 경우, stratify=y 옵션 사용
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
     # 2. Random Forest 모델 초기화 및 학습
+    # class_weight='balanced' 옵션으로 데이터 불균형을 처리
     model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
     model.fit(X_train, y_train)
 
@@ -41,7 +43,7 @@ def train_random_forest_model(df):
 
     return model, accuracy, report, FEATURES, X
 
-# --- 2. 쓰나미 경보 및 대피 요령 (이전 코드에서 가져옴) ---
+# --- 2. 쓰나미 경보 및 대피 요령 ---
 
 def display_tsunami_warning(df_results):
     """
@@ -104,4 +106,44 @@ if uploaded_file is not None:
             with st.spinner('모델 학습 중...'):
                 model, accuracy, report, FEATURES, X = train_random_forest_model(df)
             
-            if model is not None:
+            # 💡 오류 수정 부분: 이 if 문 아래의 모든 코드가 제대로 들여쓰기되었습니다.
+            if model is not None: 
+                st.success(f"모델 학습 완료! 테스트 정확도: **{accuracy:.2f}**")
+                
+                # --- 예측 수행 ---
+                # Random Forest 모델은 .predict_proba()를 사용하여 각 클래스에 속할 확률을 제공합니다.
+                # 클래스 1 (쓰나미 발생)의 확률을 가져옵니다.
+                probabilities = model.predict_proba(X)[:, 1] 
+                
+                # 결과를 데이터프레임에 추가
+                df_results = df.copy()
+                df_results['Tsunami Probability (%)'] = probabilities * 100
+                
+                st.markdown("---")
+                st.header("2. 예측 결과 분석")
+                
+                # 예측된 상위 10개 위험 이벤트 표시
+                st.subheader("가장 위험도가 높은 상위 10개 지진 이벤트")
+                df_results_sorted = df_results.sort_values(by='Tsunami Probability (%)', ascending=False).head(10)
+                st.dataframe(df_results_sorted.style.background_gradient(cmap='Reds', subset=['Tsunami Probability (%)']))
+
+                st.markdown("---")
+                
+                # --- 경보 및 요령 표시 ---
+                display_tsunami_warning(df_results)
+                
+                st.markdown("---")
+                
+                # --- 모델 상세 정보 (특징 중요도) ---
+                st.subheader("모델 학습 상세 정보")
+                st.caption("Random Forest 모델이 예측에 사용한 각 변수의 상대적 중요도입니다.")
+                feature_importances = pd.Series(model.feature_importances_, index=FEATURES).sort_values(ascending=False)
+                st.bar_chart(feature_importances)
+                
+
+
+    except Exception as e:
+        st.error(f"파일 처리 중 오류가 발생했습니다: {e}")
+
+else:
+    st.info("시작하려면 위 영역에 CSV 파일을 업로드하십시오.")
